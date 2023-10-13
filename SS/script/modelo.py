@@ -86,7 +86,7 @@ for index, row in original.iterrows():
     for ind, rw in referencia.iterrows():
         if row['referencia'] != rw['referencia']:
             #print('--> {0}'.format(rw['referencia']))
-            similares.insert(0, [row['referencia'], rw['referencia']])
+            similares.insert(0,[row['referencia'], rw['referencia']])
 similares = pd.DataFrame(
     similares,
     columns = ['referencia', 'vizinho']
