@@ -126,3 +126,95 @@ country_rfm = country_rfm.merge(
     how='left'
 )
 country_rfm.to_feather('../dados/clusterizacao_pais.feather')
+
+print('Cálculo da associação por subcategoria')
+original = fit_data(data, 'Sub-Category')
+original = original.fillna(0)
+base = original[variaveis]
+vizinhos = NearestNeighbors(n_neighbors=min(4, len(base))).fit(base)
+similares = []
+for index, row in original.iterrows():
+    # print('Referencia: {0}'.format(row['referencia']))
+    original_referencia = original[
+        original['referencia'] == row['referencia']][variaveis]
+    similar = vizinhos.kneighbors(original_referencia, return_distance=False)[0]
+    original_similar = original.iloc[similar][variaveis].reset_index()
+    referencia = original.iloc[similar]['referencia'].reset_index()
+    referencia = referencia.merge(original_similar, on='index', how='left')
+    referencia = referencia.drop(columns=['index'])
+    for ind, rw in referencia.iterrows():    
+        if row['referencia'] != rw['referencia']:            
+            similares.insert(0, [row['referencia'], rw['referencia']])
+similares = pd.DataFrame(
+    similares,
+    columns = ['referencia', 'vizinho']
+)            
+similares.to_feather('../dados/knn_subcategoria.feather')
+
+print('Regressão (com sazonalidades) por Mercado e Região...')
+regressao_market_region = pd.DataFrame()
+primeiro = 0
+for index, row in data[['Market', 'Region']].drop_duplicates().iterrows():
+    print(row['Market'])
+    print(row['Region'])
+    regressao = data[
+        (data['Market'] == row['Market']) &
+        (data['Region'] == row['Region'])
+    ][['Order Date Month', 'Sales']
+    ].groupby('Order Date Month')['Sales'].sum().reset_index()
+    regressao = regressao.rename(columns={
+        'Order Date Month': 'ds', 'Sales': 'y'
+    })
+    print(regressao)
+    m = Prophet().fit(regressao)
+    future = m.make_future_dataframe(periods=12, freq='MS')
+    forecast = m.predict(future)
+    forecast['Market'] = row['Market']
+    forecast['Region'] = row['Region']
+    forecast = forecast.merge(regressao, on='ds', how='left')
+    forecast = forecast[
+        ['Market', 'Region', 'ds', 'yhat', 'y', 'yhat_lower', 'yhat_upper']
+    ].copy()
+    if primeiro == 0:
+        regressao_market_region = forecast
+        primeiro = 1
+    else:
+        regressao_market_region = pd.concat(
+            [
+                regressao_market_region,
+                forecast
+            ]
+        )      
+regressao_market_region = regressao_market_region.reset_index()        
+regressao_market_region.to_feather('../dados/regressao_mercado_regiao.feather')
+
+print('Detecção de Anomalias por País...')
+df_out = fit_data(data, 'Country')
+out = df_out[variaveis].fillna(0).copy()
+outliers = outliers_detection(df_out, out)
+outliers.to_feather('../dados/outliers_pais.feather')
+
+
+print('Cálculo da associação por produto')
+original = fit_data(data, 'Product Name')
+original = original.fillna(0)
+base = original[variaveis]
+vizinhos = NearestNeighbors(n_neighbors=min(4, len(base))).fit(base)
+similares = []
+for index, row in original.iterrows():
+    # print('Referencia: {0}'.format(row['referencia']))
+    original_referencia = original[
+        original['referencia'] == row['referencia']][variaveis]
+    similar = vizinhos.kneighbors(original_referencia, return_distance=False)[0]
+    original_similar = original.iloc[similar][variaveis].reset_index()
+    referencia = original.iloc[similar]['referencia'].reset_index()
+    referencia = referencia.merge(original_similar, on='index', how='left')
+    referencia = referencia.drop(columns=['index'])
+    for ind, rw in referencia.iterrows():    
+        if row['referencia'] != rw['referencia']:            
+            similares.insert(0, [row['referencia'], rw['referencia']])
+similares = pd.DataFrame(
+    similares,
+    columns = ['referencia', 'vizinho']
+)            
+similares.to_feather('../dados/knn_produto.feather')
